@@ -5,10 +5,16 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
 const TOKEN     = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
+// ── Role IDs ──────────────────────────────────────────────
+const ROLE = {
+  CUTIES:      '1366648025619103744', // Cuties 💕 — default role for all members
+  SWEETIE:     '1366648025589096453', // Sweetie — membership role (to add when found)
+  MODERATORS:  null, // find dynamically
+};
+
 // ── Channel IDs ──────────────────────────────────────────
 const CH = {
   AI_TESTING:    '1396959287850569729',
-  GENERAL:        '1361355108411248832',
   SUKII_DM:      '1382831487300145253',
   BUY_MEMBERSHIP:'1433307735591485552',
   BELI_MEMBERSHIP:'1433313650323492935',
@@ -130,8 +136,49 @@ client.on('clientReady', () => {
   const guild = client.guilds.cache.first();
   if (guild) {
     console.log(`   Server: ${guild.name} (${guild.memberCount} members)`);
+    // Audit: give Cuties role to members who don't have it
+    auditCutiesRole(guild);
   }
 });
+
+// ── Auto-role: Give Cuties 💕 to new members ─────────────
+client.on('guildMemberAdd', async (member) => {
+  if (member.user.bot) return;
+  try {
+    const role = member.guild.roles.cache.get(ROLE.CUTIES);
+    if (role && !member.roles.cache.has(ROLE.CUTIES)) {
+      await member.roles.add(role);
+      console.log(`[ROLE] Added Cuties to ${member.user.username}`);
+    }
+  } catch (err) {
+    console.error(`[ROLE] Failed to add Cuties to ${member.user.username}:`, err.message);
+  }
+});
+
+// ── Audit: Ensure all members have Cuties role ────────────
+async function auditCutiesRole(guild) {
+  try {
+    const role = guild.roles.cache.get(ROLE.CUTIES);
+    if (!role) { console.warn('[ROLE] Cuties role not found'); return; }
+
+    let given = 0, skipped = 0;
+    const members = await guild.members.fetch();
+
+    for (const [id, member] of members) {
+      if (member.user.bot) { skipped++; continue; }
+      if (!member.roles.cache.has(ROLE.CUTIES)) {
+        await member.roles.add(role).catch(() => {});
+        given++;
+        console.log(`[ROLE] +Cuties: ${member.user.username}`);
+      } else {
+        skipped++;
+      }
+    }
+    console.log(`[ROLE] Audit done: gave Cuties to ${given} members, ${skipped} already had it`);
+  } catch (err) {
+    console.error('[ROLE] Audit failed:', err.message);
+  }
+}
 
 // ── Message Handler ───────────────────────────────────────
 client.on('messageCreate', async (message) => {
