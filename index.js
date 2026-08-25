@@ -26,7 +26,23 @@ const CH = {
   ANNOUNCEMENT:  '1366460938315890791',
   SWEETIE_ROOM:  '1366283422687039558',
   GACHA_WINNER:  '1381567090325983252',
+  VIRTUAL_DATE_TICKET: '1433314184103329893',
 };
+
+// ── Virtual Date Config ─────────────────────────────────────
+const VD_OPTIONS = {
+  vd_7:  { label: '7 Menit - Rp 50.000',  duration: 7,  price: 50000,  priceText: 'Rp 50.000'  },
+  vd_10: { label: '10 Menit - Rp 75.000', duration: 10, price: 75000,  priceText: 'Rp 75.000'  },
+  vd_20: { label: '20 Menit - Rp 150.000', duration: 20, price: 150000, priceText: 'Rp 150.000' },
+};
+
+const VD_LINKS = {
+  vd_7:  'https://ganknow.com/services/96251-babyval-video-call-7-menit',
+  vd_10: 'https://ganknow.com/services/96250-babyval-video-call-10-menit',
+  vd_20: 'https://ganknow.com/services/96249-babyval-video-call-20-menit',
+};
+
+const VD_TIMER = 10 * 60 * 1000; // 10 minutes
 
 // ── Message Templates ─────────────────────────────────────
 const REPLY = {
@@ -129,10 +145,95 @@ client.on('clientReady', () => {
   const guild = client.guilds.cache.first();
   if (guild) {
     console.log(`   Server: ${guild.name} (${guild.memberCount} members)`);
-    // Audit: give Cuties role to members who don't have it
     auditCutiesRole(guild);
   }
 });
+
+// ── Interaction Handler (select menus, buttons) ───────────
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isStringSelectMenu()) return;
+  if (interaction.customId !== 'virtual_date_select_id') return;
+
+  const user = interaction.user;
+  const value = interaction.values[0];
+  const option = VD_OPTIONS[value];
+  if (!option) return;
+
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  const ticketChannel = client.channels.cache.get(CH.VIRTUAL_DATE_TICKET);
+  if (!ticketChannel) {
+    await interaction.editReply('❌ Channel tiket tidak ditemukan.').catch(() => {});
+    return;
+  }
+
+  const threadName = `🎫 ${user.username} | ${option.label}`;
+  let thread;
+  try {
+    thread = await ticketChannel.threads.create({
+      name: threadName,
+      type: 'GUILD_PRIVATE_THREAD',
+      autoArchiveDuration: 60,
+    });
+    await thread.members.add(user.id);
+  } catch {
+    try {
+      thread = await ticketChannel.threads.create({
+        name: threadName,
+        autoArchiveDuration: 60,
+      });
+      await thread.members.add(user.id);
+    } catch (e) {
+      await interaction.editReply(`❌ Gagal buat thread: ${e.message}`).catch(() => {});
+      return;
+    }
+  }
+
+  const payMsg =
+    `Halo ${user.username}! 💕\n\n` +
+    `Terima kasih sudah memilih **${option.label}**!\n\n` +
+    `Silakan lakukan pembayaran ke link berikut:\n` +
+    `👉 ${VD_LINKS[value]}\n\n` +
+    `Setelah bayar, kirim bukti transfer/payment confirmation di thread ini yaa.\n` +
+    `Kamu punya waktu **10 menit** sebelum thread ini ditutup otomatis.\n\n` +
+    `Terima kasih! 💖`;
+
+  try {
+    await thread.send({ content: payMsg });
+  } catch (e) {
+    await interaction.editReply(`❌ Gagal kirim pesan: ${e.message}`).catch(() => {});
+    return;
+  }
+
+  // Timers: warn at 5 min, close at 10 min
+  const userId = user.id;
+  const threadId = thread.id;
+
+  const closeTimer = setTimeout(async () => {
+    activeTimers.delete(userId);
+    const t = client.channels.cache.get(threadId);
+    if (t) {
+      await t.send('⏰ Waktu habis. Thread ditutup.').catch(() => {});
+      await t.delete().catch(() => {});
+    }
+  }, VD_TIMER);
+
+  const warnTimer = setTimeout(async () => {
+    const t = client.channels.cache.get(threadId);
+    if (t) {
+      await t.send('⏰ Sisa **5 menit**! Segera kirim bukti pembayaran.').catch(() => {});
+    }
+  }, VD_TIMER / 2);
+
+  activeTimers.set(userId, { closeTimer, warnTimer, threadId });
+
+  await interaction.editReply({
+    content: `✅ Tiket dibuat! <#${thread.id}>\nPastikan sudah baca <#${CH.PETUNJUK}> ya!`
+  }).catch(() => {});
+});
+
+// Map userId -> { closeTimer, warnTimer, threadId }
+const activeTimers = new Map();
 
 // ── Auto-role: Give Cuties 💕 to new members ─────────────
 client.on('guildMemberAdd', async (member) => {
