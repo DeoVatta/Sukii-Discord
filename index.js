@@ -241,10 +241,100 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+// ── Moderator IDs ─────────────────────────────────────────
+const MOD_IDS = new Set(['1307562563147661364']); // Deo
+
+// ── Announcement Formatter ─────────────────────────────────
+
+/**
+ * Format patch-note style announcement.
+ * Input format (newline-separated):
+ *   TITLE: <text>
+ *   SECT: <emoji> | <section_title> | <content>
+ *   TLDR: <bullet>
+ *   CHANNEL: <channel_id>
+ */
+function formatAnnouncement(input) {
+  const DIVIDER = '✦•━━━━━━━━━━━━━━━━━━━━━━━━━━━━━•✦';
+  const lines = input.trim().split('\n');
+  let title = '';
+  const sections = [];
+  const tldr = [];
+  let channel = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('TITLE:')) {
+      title = trimmed.slice(6).trim();
+    } else if (trimmed.startsWith('SECT:')) {
+      const rest = trimmed.slice(5).trim();
+      const firstPipe = rest.indexOf('|');
+      if (firstPipe === -1) continue;
+      const emoji = rest.slice(0, firstPipe).trim();
+      const afterEmoji = rest.slice(firstPipe + 1).trim();
+      const lastPipe = afterEmoji.lastIndexOf('|');
+      const secTitle = lastPipe === -1
+        ? afterEmoji
+        : afterEmoji.slice(0, lastPipe).trim();
+      const secContent = lastPipe === -1
+        ? ''
+        : afterEmoji.slice(lastPipe + 1).trim();
+      sections.push({ emoji, title: secTitle, content: secContent });
+    } else if (trimmed.startsWith('TLDR:')) {
+      tldr.push(trimmed.slice(5).trim());
+    } else if (trimmed.startsWith('CHANNEL:')) {
+      channel = trimmed.slice(8).trim();
+    }
+  }
+
+  if (!title || sections.length === 0) return null;
+
+  let msg = `# 🌟 **${title}** 🌟\n\n`;
+
+  for (const { emoji, title: secTitle, content } of sections) {
+    if (!content) {
+      msg += `## ${emoji} **${secTitle}**\n\n`;
+      continue;
+    }
+    // Split content: first part before any >> is the body, each >> starts a sub-section
+    // Each sub-section format: ">>SubTitle\nsub-content"
+    const parts = content.split(/(?=>>)/);
+    let body = parts[0].trim();
+    const subs = parts.slice(1);
+
+    msg += `## ${emoji} **${secTitle}**\n${body}\n`;
+    for (const sub of subs) {
+      const subTrimmed = sub.trim(); // ">>Title\ncontent" or ">>Title"
+      if (!subTrimmed.startsWith('>>')) continue;
+      const after = subTrimmed.slice(2).trim(); // "Title\ncontent" or "Title"
+      const nlIdx = after.indexOf('\n');
+      if (nlIdx === -1) {
+        msg += `### ${after}\n`;
+      } else {
+        const subTitle = after.slice(0, nlIdx).trim();
+        const subBody = after.slice(nlIdx + 1).trim();
+        msg += `### ${subTitle}\n${subBody}\n`;
+      }
+    }
+    msg += '\n';
+  }
+
+  if (tldr.length > 0) {
+    msg += `**📋 Ringkasan:**\n`;
+    for (const b of tldr) msg += `• ${b}\n`;
+    msg += '\n';
+  }
+
+  msg += `<@&${ROLE.CUTIES}>\n\n${DIVIDER}`;
+
+  return { text: msg, channel };
+}
+
 // ── Commands ──────────────────────────────────────────────
 async function handleCommand(message, text) {
-  const [cmd, ...args] = text.slice(1).split(' ');
-  const arg = args.join(' ');
+  const [cmd, ...args] = text.slice(1).split('\n');
+  const arg = args.join('\n');
 
   switch (cmd.toLowerCase()) {
     case 'ping':
@@ -317,6 +407,41 @@ async function handleCommand(message, text) {
         await message.reply(`Gatau channel "${arg}" 💭 Check <#${CH.COMMAND_GUIDE}> ya!`);
       }
       break;
+    }
+
+    case 'announce': {
+      if (!MOD_IDS.has(message.author.id)) {
+        await message.reply('❌ Hanya moderator yang bisa pakai ini.').catch(() => {});
+        return;
+      }
+      const result = formatAnnouncement(arg);
+      if (!result) {
+        await message.reply(
+          '❌ Format salah. Contoh:\n' +
+          '```\n' +
+          '!announce\n' +
+          'TITLE: Update Bulan Ini\n' +
+          'SECT: 🆕 | Konten Baru | Deskripsi konten\n' +
+          'SECT: ⚠️ | Perhatian | Isi perhatian\n' +
+          'TLDR: Bullet ringkasan 1\n' +
+          'TLDR: Bullet ringkasan 2\n' +
+          '```\n' +
+          'Gunakan >> untuk sub-header (contoh: content>>Sub Header Title)'
+        ).catch(() => {});
+        return;
+      }
+      const targetCh = message.guild.channels.cache.get(result.channel || CH.ANNOUNCEMENT);
+      if (!targetCh) {
+        await message.reply(`❌ Channel tidak ditemukan.`).catch(() => {});
+        return;
+      }
+      try {
+        await targetCh.send(result.text);
+        await message.reply(`✅ Announce terkirim ke <#${targetCh.id}>`).catch(() => {});
+      } catch (err) {
+        await message.reply(`❌ Gagal kirim: ${err.message}`).catch(() => {});
+      }
+      return;
     }
 
     case 'echo':
