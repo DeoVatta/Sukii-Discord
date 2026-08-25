@@ -14,24 +14,17 @@ const ROLE = {
 
 // ── Channel IDs ──────────────────────────────────────────
 const CH = {
-  AI_TESTING:    '1396959287850569729',
   SUKII_DM:      '1382831487300145253',
   BUY_MEMBERSHIP:'1433307735591485552',
   BELI_MEMBERSHIP:'1433313650323492935',
   GUIDE_EN:      '1433307642251448320',
   GUIDE_ID:      '1433313580169564292',
   RULES:         '1307686210948563004',
-  COMMAND_GUIDE: '1435151590750425179',
   PETUNJUK:      '1433314115002306620',
   SPILL_ME:      '1402130293229359188',
   EXCLUSIVE:      '1402710628908662794',
   ANNOUNCEMENT:  '1366460938315890791',
   SWEETIE_ROOM:  '1366283422687039558',
-  BROADCAST:     '1399979017469169716',
-  FREE_STUFF:    '1435154387981828216',
-  VIRTUAL_DATE:  '1435503585181040660',
-  TIKTOK_LIVE:   '1399967876856680689',
-  WELCOME:       '1366590718520590337',
   GACHA_WINNER:  '1381567090325983252',
 };
 
@@ -73,7 +66,7 @@ const REPLY = {
     `Gacha winners di <#${CH.GACHA_WINNER}>! Semoga kamu yang berikutnya ya! 💖✨`,
 
   tiktok: () =>
-    `Follow Val di TikTok @cutieval ya! 💕 TikTok live alerts di <#${CH.TIKTOK_LIVE}>`,
+    `Follow Val di TikTok @cutieval ya! 💕`,
 
   welcome: (user) =>
     `Selamat datang ${user}! 💕 Welcome ke server Cutie Val! ` +
@@ -216,21 +209,9 @@ client.on('messageCreate', async (message) => {
 
   // ── Guild channels ────────────────────────────────────
 
-  // Welcome new members in #welcome
-  if (channelId === CH.WELCOME) {
-    const reply = REPLY.welcome(author.username);
-    try {
-      await message.reply(reply).catch(() => {});
-    } catch {}
-    return;
-  }
-
-  // No auto-reply in general chat
-  if (channelId === CH.GENERAL) return;
-
-  // Keyword-based auto-reply
+  // Keyword-based auto-reply (no channel restriction)
   const reply = matchReply(text, channelId);
-  if (reply && channelId === CH.AI_TESTING) {
+  if (reply) {
     await message.reply(reply).catch(() => {});
     return;
   }
@@ -414,7 +395,7 @@ async function handleCommand(message, text) {
       if (info) {
         await message.reply(`📌 **${info[0]}**\n${info[1]}`);
       } else {
-        await message.reply(`Gatau channel "${arg}" 💭 Check <#${CH.COMMAND_GUIDE}> ya!`);
+        await message.reply(`Gatau channel "${arg}" 💭`).catch(() => {});
       }
       break;
     }
