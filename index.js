@@ -235,14 +235,24 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // ── Slash Commands ────────────────────────────────────
+  // ── Command check (only Baby Val role) ──────────────────────
   if (text.startsWith('!')) {
+    if (!message.member || !hasBabyValRole(message.member)) return;
     await handleCommand(message, text);
   }
 });
 
 // ── Moderator IDs ─────────────────────────────────────────
 const MOD_IDS = new Set(['1307562563147661364']); // Deo
+const BABY_VAL_ROLE = '1361766462724898876'; // ❤️・Baby Val・❤️ — only role that can use commands
+
+function isMod(userId) {
+  return MOD_IDS.has(userId);
+}
+
+function hasBabyValRole(member) {
+  return member.roles.cache.has(BABY_VAL_ROLE);
+}
 
 // ── Announcement Formatter ─────────────────────────────────
 
