@@ -683,7 +683,7 @@ async function sendSpillMePost() {
         const announceCh = client.channels.cache.get(SPILL_ME_ANNOUNCE_CHANNEL_ID);
         if (announceCh) {
           await announceCh.send(
-            `💜 **Konten baru buat @Sweetie!**\nCek di <#${SPILL_ME_CHANNEL_ID}> yaa! 😘`
+            `Konten baru buat @Sweetie!\nCek di <#${SPILL_ME_CHANNEL_ID}> yaa!`
           );
         }
       } catch (e) {
@@ -792,7 +792,7 @@ async function sendBoosterPost() {
       const announceCh = client.channels.cache.get(BOOSTER_ANNOUNCE_CHANNEL_ID);
       if (announceCh) {
         await announceCh.send(
-          `🔥 **Ada konten baru nih buat @Server Booster!**\nCek di <#${BOOSTER_CHANNEL_ID}> yaa! 💕`
+          `Ada konten baru nih buat @Server Booster!\nCek di <#${BOOSTER_CHANNEL_ID}> yaa!`
         );
       }
     } catch (e) {
