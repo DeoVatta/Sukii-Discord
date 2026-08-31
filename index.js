@@ -152,8 +152,10 @@ client.on('clientReady', () => {
     // Refresh Virtual Date dropdown prices in channel
     syncVirtualDateMessage(guild).catch((e) => console.warn('[VD-sync]', e.message));
   }
-  // Start booster channel scheduler (every 2 days at 20:00)
+  // Start booster channel scheduler (every 2 days at 20:00 WIB)
   scheduleBoosterPost();
+  // Start spill me scheduler (daily at 18:00 WIB)
+  scheduleSpillMePost();
 });
 
 // ── Virtual Date dropdown message sync ──────────────────────
@@ -629,11 +631,87 @@ client.on('error', (err) => {
   console.error('Discord client error:', err.message);
 });
 
-// ── Booster Channel — FIFO 2 messages every 2 days at 20:00 ──────────────────
-import('./drive-source/drive-source.js').then(({ listFiles, downloadFile }) => {
-  global._driveListFiles = listFiles;
-  global._driveDownloadFile = downloadFile;
-});
+// ── Spill Me Channel — upload 1 content daily at 18:00 WIB ─────────────────
+const SPILL_ME_CHANNEL_ID = '1402130293229359188';
+const SPILL_ME_FOLDER_IDS = [
+  process.env.SPILL_ME_FOLDER_ID_1 || '1yvJwybrLcAvNuQ9Hm7Zp_kBMiZP0FJ81',
+  process.env.SPILL_ME_FOLDER_ID_2 || '1RFWjo4bh1swZgIXBsuPPLUlzZ-pNiuu0',
+];
+
+async function sendSpillMePost() {
+  const channel = client.channels.cache.get(SPILL_ME_CHANNEL_ID);
+  if (!channel) {
+    console.warn('[SpillMe] Channel not found:', SPILL_ME_CHANNEL_ID);
+    return;
+  }
+
+  const listFiles = global._driveListFiles;
+  const downloadFile = global._driveDownloadFile;
+  if (!listFiles || !downloadFile) {
+    console.log('[SpillMe] Drive module not loaded yet, skipping.');
+    return;
+  }
+
+  // Collect files from both folders
+  let allFiles = [];
+  for (const folderId of SPILL_ME_FOLDER_IDS) {
+    try {
+      const files = await listFiles(folderId, 5);
+      allFiles = allFiles.concat(files);
+    } catch (e) {
+      console.warn(`[SpillMe] Failed to list folder ${folderId}:`, e.message);
+    }
+  }
+
+  // Sort newest first
+  allFiles.sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+
+  // Try uploading first file, if fails try next
+  for (const file of allFiles) {
+    try {
+      console.log(`[SpillMe] Uploading: ${file.name}`);
+      const buf = await downloadFile(file.id);
+      const ext = file.name.split('.').pop() || 'jpg';
+      const filename = `content_${Date.now()}.${ext}`;
+      await channel.send({ files: [{ attachment: buf, name: filename }] });
+      console.log(`[SpillMe] ✅ Sent: ${file.name} (${(buf.length / 1024 / 1024).toFixed(2)}MB)`);
+      return;
+    } catch (e) {
+      console.warn(`[SpillMe] Failed to upload ${file.name}:`, e.message);
+      if (e.message.includes('Request entity too large') || e.message.includes('FILE_TOO_LARGE')) {
+        console.log('[SpillMe] Size limit hit, trying next file...');
+        continue;
+      }
+      break;
+    }
+  }
+  console.warn('[SpillMe] No files could be uploaded.');
+}
+
+// Schedule: daily at 18:00 WIB
+function scheduleSpillMePost() {
+  function msUntilTarget(targetHourWIB) {
+    // targetHourWIB = 18 means 18:00 WIB = 11:00 UTC
+    const targetHourUTC = targetHourWIB - 7;
+    const now = Date.now();
+    const d = new Date(now);
+    d.setUTCHours(targetHourUTC, 0, 0, 0);
+    if (d.getTime() <= now) d.setUTCDate(d.getUTCDate() + 1);
+    return d.getTime() - now;
+  }
+
+  function runAndReschedule() {
+    sendSpillMePost().finally(() => {
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      setTimeout(runAndReschedule, ONE_DAY);
+      console.log('[SpillMe] Next run tomorrow at 18:00 WIB.');
+    });
+  }
+
+  const ms = msUntilTarget(18);
+  console.log(`[SpillMe] First run in ${Math.round(ms / 1000 / 60)} minutes at 18:00 WIB.`);
+  setTimeout(runAndReschedule, ms);
+}
 
 const BOOSTER_CHANNEL_ID = '1466092749098057768';
 const BOOSTER_FOLDER_ID = process.env.BOOSTER_DRIVE_FOLDER_ID || ''; // set in .env
