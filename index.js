@@ -30,10 +30,13 @@ const CH = {
 };
 
 // ── Virtual Date Config ─────────────────────────────────────
+// ── Virtual Date Config ─────────────────────────────────────
+// Labels match babyval.com Private Video Call section. No prices shown
+// (babyval.com doesn't display them either).
 const VD_OPTIONS = {
-  vd_7:  { label: '7 Menit - Rp 50.000',  duration: 7,  price: 50000,  priceText: 'Rp 50.000'  },
-  vd_10: { label: '10 Menit - Rp 75.000', duration: 10, price: 75000,  priceText: 'Rp 75.000'  },
-  vd_20: { label: '20 Menit - Rp 150.000', duration: 20, price: 150000, priceText: 'Rp 150.000' },
+  vd_7:  { label: '7 Menit',  duration: 7,  description: 'Video Call Singkat bareng Baby Val' },
+  vd_10: { label: '10 Menit', duration: 10, description: 'Rekomended buat Video Call bareng Baby Val' },
+  vd_20: { label: '20 Menit', duration: 20, description: 'VIP Personal Video Call bareng Baby Val' },
 };
 
 const VD_LINKS = {
@@ -146,8 +149,54 @@ client.on('clientReady', () => {
   if (guild) {
     console.log(`   Server: ${guild.name} (${guild.memberCount} members)`);
     auditCutiesRole(guild);
+    // Refresh Virtual Date dropdown prices in channel
+    syncVirtualDateMessage(guild).catch((e) => console.warn('[VD-sync]', e.message));
   }
 });
+
+// ── Virtual Date dropdown message sync ──────────────────────
+// Builds (or edits) the dropdown embed in #tiket with current prices.
+// Idempotent: looks for existing message from Sukii and edits; else posts.
+async function syncVirtualDateMessage(guild) {
+  const ch = guild.channels.cache.get(CH.VIRTUAL_DATE_TICKET);
+  if (!ch) { console.log('[VD-sync] ticket channel not found'); return; }
+
+  const { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder } = await import('discord.js');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('virtual_date_select_id')
+    .setPlaceholder('💞 Private Video Call')
+    .addOptions(Object.entries(VD_OPTIONS).map(([key, o]) => ({
+      label: o.label,
+      value: key,
+      description: o.description,
+    })));
+  const row = new ActionRowBuilder().addComponents(select);
+
+  const embed = new EmbedBuilder()
+    .setColor(0xff65a3)
+    .setTitle('💞 Private Video Call')
+    .setDescription(
+      'Mau ngobrol atau VCS privat 1 on 1 bareng Baby Val?\n\n' +
+      'Pilih paket di bawah ini. Setelah klik, ticket thread akan dibuat otomatis.'
+    )
+    .setFooter({ text: 'Pilih paket Video Call bareng Baby Val' })
+    .setTimestamp();
+
+  // Find existing Sukii message with our dropdown
+  const messages = await ch.messages.fetch({ limit: 20 });
+  const existing = messages.find((m) =>
+    m.author.id === client.user.id &&
+    m.components?.some((r) => r.components?.some((c) => c.customId === 'virtual_date_select_id'))
+  );
+
+  if (existing) {
+    await existing.edit({ embeds: [embed], components: [row] });
+    console.log('[VD-sync] edited existing dropdown message:', existing.id);
+  } else {
+    const sent = await ch.send({ embeds: [embed], components: [row] });
+    console.log('[VD-sync] posted new dropdown message:', sent.id);
+  }
+}
 
 // ── Interaction Handler (select menus, buttons) ───────────
 client.on('interactionCreate', async (interaction) => {
