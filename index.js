@@ -152,6 +152,8 @@ client.on('clientReady', () => {
     // Refresh Virtual Date dropdown prices in channel
     syncVirtualDateMessage(guild).catch((e) => console.warn('[VD-sync]', e.message));
   }
+  // Start booster channel scheduler (every 2 days at 20:00)
+  scheduleBoosterPost();
 });
 
 // ── Virtual Date dropdown message sync ──────────────────────
@@ -627,11 +629,105 @@ client.on('error', (err) => {
   console.error('Discord client error:', err.message);
 });
 
+// ── Booster Channel — FIFO 2 messages every 2 days at 20:00 ──────────────────
+import('./drive-source/drive-source.js').then(({ listFiles, downloadFile }) => {
+  global._driveListFiles = listFiles;
+  global._driveDownloadFile = downloadFile;
+});
+
+const BOOSTER_CHANNEL_ID = '1466092749098057768';
+const BOOSTER_FOLDER_ID = process.env.BOOSTER_DRIVE_FOLDER_ID || ''; // set in .env
+const MAX_MESSAGES = 2;
+
+async function sendBoosterPost() {
+  if (!BOOSTER_FOLDER_ID) {
+    console.log('[Booster] BOOSTER_DRIVE_FOLDER_ID not set, skipping.');
+    return;
+  }
+  const listFiles = global._driveListFiles;
+  const downloadFile = global._driveDownloadFile;
+  if (!listFiles || !downloadFile) {
+    console.log('[Booster] Drive module not loaded yet, skipping this run.');
+    return;
+  }
+
+  const channel = client.channels.cache.get(BOOSTER_CHANNEL_ID);
+  if (!channel) {
+    console.warn('[Booster] Channel not found:', BOOSTER_CHANNEL_ID);
+    return;
+  }
+
+  try {
+    // 1. Fetch latest files from Drive
+    const files = await listFiles(BOOSTER_FOLDER_ID, MAX_MESSAGES);
+    if (files.length === 0) {
+      console.log('[Booster] No files found in Drive folder.');
+      return;
+    }
+
+    console.log(`[Booster] Found ${files.length} file(s) in Drive. Posting to channel...`);
+
+    // 2. Delete old messages (FIFO — keep max 2)
+    const messages = await channel.messages.fetch({ limit: 100 });
+    const toDelete = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp).first(MAX_MESSAGES);
+    if (toDelete.length > 0) {
+      console.log(`[Booster] Deleting ${toDelete.length} old message(s)...`);
+      for (const msg of toDelete) {
+        await msg.delete().catch((e) => console.warn('[Booster] Failed to delete msg:', e.message));
+      }
+    }
+
+    // 3. Send new files (newest first)
+    for (const file of files) {
+      try {
+        const buf = await downloadFile(file.id);
+        const ext = file.name.split('.').pop() || 'jpg';
+        const filename = `photo.${ext}`;
+        await channel.send({
+          content: `📷 *Post baru di Tevi*\n\nhttps://tevi.com/@cutieval`,
+          files: [{ attachment: buf, name: filename }],
+        });
+        console.log(`[Booster] Sent: ${file.name}`);
+      } catch (e) {
+        console.warn(`[Booster] Failed to send ${file.name}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('[Booster] Error:', err.message);
+  }
+}
+
+// Schedule: every 2 days at 20:00 WIB (Asia/Jakarta = UTC+7)
+function scheduleBoosterPost() {
+  function msUntil(targetHourWIB, targetMinWIB) {
+    // targetHourWIB = 20 means 20:00 WIB = 13:00 UTC
+    const targetHourUTC = targetHourWIB - 7;
+    const now = Date.now();
+    // Target: today at (targetHourUTC:targetMinWIB) UTC
+    const d = new Date(now);
+    d.setUTCHours(targetHourUTC, targetMinWIB, 0, 0);
+    if (d.getTime() <= now) d.setUTCDate(d.getUTCDate() + 1);
+    return d.getTime() - now;
+  }
+
+  function runAndReschedule() {
+    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+    sendBoosterPost().finally(() => {
+      setTimeout(runAndReschedule, TWO_DAYS);
+      console.log('[Booster] Next run in 2 days at 20:00 WIB.');
+    });
+  }
+
+  const ms = msUntil(20, 0);
+  console.log(`[Booster] First run in ${Math.round(ms / 1000 / 60)} minutes at 20:00 WIB.`);
+  setTimeout(runAndReschedule, ms);
+}
+
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err.message);
 });
 
-// ── Login ────────────────────────────────────────────────
+// ── Login ───────────────────────────────────────────────
 if (!TOKEN) {
   console.error('DISCORD_TOKEN not set in .env');
   process.exit(1);
