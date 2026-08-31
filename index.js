@@ -637,6 +637,8 @@ const SPILL_ME_FOLDER_IDS = [
   process.env.SPILL_ME_FOLDER_ID_1 || '1yvJwybrLcAvNuQ9Hm7Zp_kBMiZP0FJ81',
   process.env.SPILL_ME_FOLDER_ID_2 || '1RFWjo4bh1swZgIXBsuPPLUlzZ-pNiuu0',
 ];
+const SPILL_ME_ANNOUNCE_CHANNEL_ID = '1361355108411248832'; // #general
+const SPILL_ME_ROLE_ID = '1307647406451720212'; // Sweetie
 
 async function sendSpillMePost() {
   const channel = client.channels.cache.get(SPILL_ME_CHANNEL_ID);
@@ -675,6 +677,18 @@ async function sendSpillMePost() {
       const filename = `content_${Date.now()}.${ext}`;
       await channel.send({ files: [{ attachment: buf, name: filename }] });
       console.log(`[SpillMe] ✅ Sent: ${file.name} (${(buf.length / 1024 / 1024).toFixed(2)}MB)`);
+
+      // Announce to #general
+      try {
+        const announceCh = client.channels.cache.get(SPILL_ME_ANNOUNCE_CHANNEL_ID);
+        if (announceCh) {
+          await announceCh.send(
+            `💜 **Konten baru buat @Sweetie!**\nCek di <#${SPILL_ME_CHANNEL_ID}> yaa! 😘`
+          );
+        }
+      } catch (e) {
+        console.warn('[SpillMe] Announce failed:', e.message);
+      }
       return;
     } catch (e) {
       console.warn(`[SpillMe] Failed to upload ${file.name}:`, e.message);
@@ -714,7 +728,9 @@ function scheduleSpillMePost() {
 }
 
 const BOOSTER_CHANNEL_ID = '1466092749098057768';
-const BOOSTER_FOLDER_ID = process.env.BOOSTER_DRIVE_FOLDER_ID || ''; // set in .env
+const BOOSTER_FOLDER_ID = process.env.BOOSTER_DRIVE_FOLDER_ID || '';
+const BOOSTER_ANNOUNCE_CHANNEL_ID = '1361355108411248832'; // #general
+const BOOSTER_ROLE_ID = '1371209944912887948'; // Server Booster
 const MAX_MESSAGES = 2;
 
 async function sendBoosterPost() {
@@ -769,6 +785,18 @@ async function sendBoosterPost() {
       } catch (e) {
         console.warn(`[Booster] Failed to send ${file.name}:`, e.message);
       }
+    }
+
+    // Announce to #general
+    try {
+      const announceCh = client.channels.cache.get(BOOSTER_ANNOUNCE_CHANNEL_ID);
+      if (announceCh) {
+        await announceCh.send(
+          `🔥 **Ada konten baru nih buat @Server Booster!**\nCek di <#${BOOSTER_CHANNEL_ID}> yaa! 💕`
+        );
+      }
+    } catch (e) {
+      console.warn('[Booster] Announce failed:', e.message);
     }
   } catch (err) {
     console.error('[Booster] Error:', err.message);
