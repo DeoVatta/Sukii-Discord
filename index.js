@@ -12,10 +12,10 @@ const execFile = promisify(_execFile);
 // ── Dynamic Discord upload limit (boost-aware) ──────────────────
 function getGuildUploadLimit(guild) {
   const tier = guild?.premiumTier ?? 0;
-  // Discord: tier 0/1 = 25MB, tier 2 = 50MB, tier 3 = 100MB (tierless boosting may vary)
+  // Verified live: tier 0 base ~10MB (10 OK, 12 fail) — bot limit, not tier boost.
   if (tier >= 3) return 100 * 1024 * 1024;
   if (tier === 2) return 50 * 1024 * 1024;
-  return 25 * 1024 * 1024;
+  return 10 * 1024 * 1024;
 }
 async function probeDuration(filePath) {
   try {
