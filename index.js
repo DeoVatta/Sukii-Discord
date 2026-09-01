@@ -2,6 +2,68 @@ import 'dotenv/config';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { listFiles, downloadFile } from './drive-source/drive-source.js';
 import { tickLiveLoop, tickPostsLoop } from './tevi-notif.js';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execFile as _execFile } from 'child_process';
+import { promisify } from 'util';
+const execFile = promisify(_execFile);
+
+// ── Dynamic Discord upload limit (boost-aware) ──────────────────
+function getGuildUploadLimit(guild) {
+  const tier = guild?.premiumTier ?? 0;
+  // Discord: tier 0/1 = 25MB, tier 2 = 50MB, tier 3 = 100MB (tierless boosting may vary)
+  if (tier >= 3) return 100 * 1024 * 1024;
+  if (tier === 2) return 50 * 1024 * 1024;
+  return 25 * 1024 * 1024;
+}
+async function probeDuration(filePath) {
+  try {
+    const { stdout } = await execFile('ffprobe', ['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1', filePath]);
+    const d = parseFloat(stdout.trim());
+    return isFinite(d) && d > 0 ? d : 0;
+  } catch { return 0; }
+}
+async function compressVideoToLimit(inputPath, limitBytes) {
+  const targetBytes = Math.floor(limitBytes * 0.95); // 5% margin
+  const dur = await probeDuration(inputPath);
+  // If no duration, use CRF-only 720p fallback
+  const outPath = inputPath + '.compressed.mp4';
+  let args;
+  if (dur > 0) {
+    const targetBitrateK = Math.floor((targetBytes * 8 / dur) / 1000);
+    // clamp 300k-4000k, allocate 128k for audio
+    const videoK = Math.max(300, Math.min(4000, targetBitrateK - 128));
+    args = ['-y','-i',inputPath,'-vf','scale=min(1280\,iw):-2','-c:v','libx264','-preset','fast','-b:v', String(videoK)+'k','-maxrate', String(videoK)+'k','-bufsize', String(videoK*2)+'k','-c:a','aac','-b:a','128k', outPath];
+  } else {
+    args = ['-y','-i',inputPath,'-vf','scale=min(1280\,iw):-2','-c:v','libx264','-preset','fast','-crf','26','-c:a','aac','-b:a','128k', outPath];
+  }
+  await execFile('ffmpeg', args, { timeout: 120000 });
+  return outPath;
+}
+async function prepareAttachment(buf, filename, guild) {
+  const limit = getGuildUploadLimit(guild) - 512*1024; // 0.5MB margin
+  if (buf.length <= limit) return { buffer: buf, filename };
+  // Need ffmpeg — write temp
+  const ext = path.extname(filename) || '.mp4';
+  const tmpIn = path.join(os.tmpdir(), `sukii-in-${Date.now()}${ext}`);
+  const tmpOutHolder = { path: null };
+  try {
+    fs.writeFileSync(tmpIn, buf);
+    const outPath = await compressVideoToLimit(tmpIn, limit);
+    tmpOutHolder.path = outPath;
+    const outBuf = fs.readFileSync(outPath);
+    console.log(`[compress] ${filename}: ${(buf.length/1024/1024).toFixed(1)}MB -> ${(outBuf.length/1024/1024).toFixed(1)}MB (limit ${(limit/1024/1024).toFixed(1)}MB)`);
+    if (outBuf.length > limit) console.warn(`[compress] still over limit after compress: ${(outBuf.length/1024/1024).toFixed(1)}MB`);
+    const outName = filename.replace(/\.[^.]+$/, '.mp4');
+    return { buffer: outBuf, filename: outName, tmpFiles: [tmpIn, outPath] };
+  } catch (e) {
+    console.warn('[compress] failed:', e.message.slice(0,300));
+    return { buffer: buf, filename, compressError: e.message };
+  } finally {
+    // cleanup will be done by caller after send
+  }
+}
 
 // ── Config ──────────────────────────────────────────────
 const TOKEN     = process.env.DISCORD_TOKEN;
@@ -675,13 +737,18 @@ async function sendSpillMePost() {
 
   // Try uploading first file, if fails try next
   for (const file of allFiles) {
+    let tmpFiles = [];
     try {
       console.log(`[SpillMe] Uploading: ${file.name}`);
-      const buf = await downloadFile(file.id);
+      const rawBuf = await downloadFile(file.id);
       const ext = file.name.split('.').pop() || 'jpg';
-      const filename = `content_${Date.now()}.${ext}`;
-      await channel.send({ files: [{ attachment: buf, name: filename }] });
-      console.log(`[SpillMe] ✅ Sent: ${file.name} (${(buf.length / 1024 / 1024).toFixed(2)}MB)`);
+      const rawName = `content_${Date.now()}.${ext}`;
+      const guild2 = channel.guild ?? client.guilds.cache.first();
+      const prep = await prepareAttachment(rawBuf, rawName, guild2);
+      tmpFiles = prep.tmpFiles || [];
+      await channel.send({ files: [{ attachment: prep.buffer, name: prep.filename }] });
+      console.log(`[SpillMe] ✅ Sent: ${file.name} (compressed ${(prep.buffer.length / 1024 / 1024).toFixed(2)}MB)`);
+      for (const f2 of tmpFiles) { try { fs.unlinkSync(f2); } catch {} }
 
       // Announce to #general
       try {
@@ -696,6 +763,7 @@ async function sendSpillMePost() {
       }
       return;
     } catch (e) {
+      for (const f2 of tmpFiles) { try { fs.unlinkSync(f2); } catch {} }
       console.warn(`[SpillMe] Failed to upload ${file.name}:`, e.message);
       if (e.message.includes('Request entity too large') || e.message.includes('FILE_TOO_LARGE')) {
         console.log('[SpillMe] Size limit hit, trying next file...');
@@ -776,16 +844,22 @@ async function sendBoosterPost() {
 
     // 3. Send new files (newest first)
     for (const file of files) {
+      let tmpFilesB = [];
       try {
-        const buf = await downloadFile(file.id);
+        const rawBuf = await downloadFile(file.id);
         const ext = file.name.split('.').pop() || 'jpg';
-        const filename = `photo.${ext}`;
+        const rawName = `photo.${ext}`;
+        const guildB = channel.guild ?? client.guilds.cache.first();
+        const prepB = await prepareAttachment(rawBuf, rawName, guildB);
+        tmpFilesB = prepB.tmpFiles || [];
         await channel.send({
           content: `📷 *Post baru di Tevi*\n\nhttps://tevi.com/@cutieval`,
-          files: [{ attachment: buf, name: filename }],
+          files: [{ attachment: prepB.buffer, name: prepB.filename }],
         });
-        console.log(`[Booster] Sent: ${file.name}`);
+        console.log(`[Booster] Sent: ${file.name} (${(prepB.buffer.length/1024/1024).toFixed(1)}MB)`);
+        for (const f2 of tmpFilesB) { try { fs.unlinkSync(f2); } catch {} }
       } catch (e) {
+        for (const f2 of tmpFilesB) { try { fs.unlinkSync(f2); } catch {} }
         console.warn(`[Booster] Failed to send ${file.name}:`, e.message);
       }
     }
