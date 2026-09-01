@@ -726,8 +726,9 @@ async function sendSpillMePost() {
   let allFiles = [];
   for (const folderId of SPILL_ME_FOLDER_IDS) {
     try {
-      const files = await listFiles(folderId, 5);
-      allFiles = allFiles.concat(files);
+      let files = await listFiles(folderId, 20);
+      files = files.filter(f => f.size && String(f.size) !== '0');
+      allFiles = allFiles.concat(files.slice(0, 5));
     } catch (e) {
       console.warn(`[SpillMe] Failed to list folder ${folderId}:`, e.message);
     }
@@ -824,21 +825,33 @@ async function sendBoosterPost() {
   }
 
   try {
-    // 1. Fetch latest files from Drive
-    const files = await listFiles(BOOSTER_FOLDER_ID, MAX_MESSAGES);
+    // 1. Fetch latest files from Drive (skip 0-byte interrupted uploads)
+    let files = await listFiles(BOOSTER_FOLDER_ID, 20);
+    files = files.filter(f => f.size && String(f.size) !== '0');
+    files = files.slice(0, MAX_MESSAGES);
     if (files.length === 0) {
-      console.log('[Booster] No files found in Drive folder.');
+      console.log('[Booster] No non-empty files found in Drive folder.');
       return;
     }
 
     console.log(`[Booster] Found ${files.length} file(s) in Drive. Posting to channel...`);
 
-    // 2. Delete old messages (FIFO — keep max 2)
+    // 2. Delete old messages (FIFO — keep 2 after new posts)
+    // Spec: hapus pesan lama, sisakan 2 pesan total setelah kirim baru
     const messages = await channel.messages.fetch({ limit: 100 });
-    const toDelete = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp).first(MAX_MESSAGES);
-    if (toDelete.length > 0) {
-      console.log(`[Booster] Deleting ${toDelete.length} old message(s)...`);
-      for (const msg of toDelete) {
+    const botMessages = messages.filter(m => m.author.id === client.user.id);
+    // Delete all bot messages, will re-post 2 new ones (keep total = 2)
+    if (botMessages.size > 0) {
+      console.log(`[Booster] Deleting ${botMessages.size} old message(s) (FIFO keep 2 after send)...`);
+      for (const msg of botMessages.values()) {
+        await msg.delete().catch((e) => console.warn('[Booster] Failed to delete msg:', e.message));
+      }
+    }
+    // Also delete non-bot messages if channel has other content (clean to 0 before posting)
+    const otherMessages = messages.filter(m => m.author.id !== client.user.id);
+    if (otherMessages.size > 0) {
+      console.log(`[Booster] Deleting ${otherMessages.size} other message(s) in channel...`);
+      for (const msg of otherMessages.values()) {
         await msg.delete().catch((e) => console.warn('[Booster] Failed to delete msg:', e.message));
       }
     }
