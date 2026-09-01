@@ -3,11 +3,11 @@
  * Uses service account (hermes-babyval@...)
  */
 import { google } from 'googleapis';
-import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(path.resolve(import.meta.url));
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
@@ -52,6 +52,14 @@ async function downloadFile(fileId) {
     alt: 'media',
     responseType: 'arraybuffer',
   });
+  // gaxios returns Blob in Node 26 — convert via duck-typing (instanceof fails cross-realm)
+  if (res.data != null && typeof res.data.arrayBuffer === 'function') {
+    const ab = await res.data.arrayBuffer();
+    return Buffer.from(ab);
+  }
+  if (res.data instanceof ArrayBuffer) return Buffer.from(res.data);
+  if (ArrayBuffer.isView(res.data)) return Buffer.from(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+  if (Buffer.isBuffer(res.data)) return res.data;
   return Buffer.from(res.data);
 }
 
@@ -67,4 +75,4 @@ async function getFileMeta(fileId) {
   return res.data;
 }
 
-module.exports = { initDrive, listFiles, downloadFile, getFileMeta };
+export { initDrive, listFiles, downloadFile, getFileMeta };

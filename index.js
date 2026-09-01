@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { listFiles, downloadFile } from './drive-source/drive-source.js';
+import { tickLiveLoop, tickPostsLoop } from './tevi-notif.js';
 
 // ── Config ──────────────────────────────────────────────
 const TOKEN     = process.env.DISCORD_TOKEN;
@@ -156,6 +158,11 @@ client.on('clientReady', () => {
   scheduleBoosterPost();
   // Start spill me scheduler (daily at 18:00 WIB)
   scheduleSpillMePost();
+  // Start Tevi notification polls (live + posts)
+  tickLiveLoop();
+  tickPostsLoop();
+  setInterval(tickLiveLoop, 60 * 1000);
+  setInterval(tickPostsLoop, 5 * 60 * 1000);
 });
 
 // ── Virtual Date dropdown message sync ──────────────────────
@@ -647,8 +654,6 @@ async function sendSpillMePost() {
     return;
   }
 
-  const listFiles = global._driveListFiles;
-  const downloadFile = global._driveDownloadFile;
   if (!listFiles || !downloadFile) {
     console.log('[SpillMe] Drive module not loaded yet, skipping.');
     return;
@@ -683,7 +688,7 @@ async function sendSpillMePost() {
         const announceCh = client.channels.cache.get(SPILL_ME_ANNOUNCE_CHANNEL_ID);
         if (announceCh) {
           await announceCh.send(
-            `Konten baru buat @Sweetie!\nCek di <#${SPILL_ME_CHANNEL_ID}> yaa!`
+            `Konten baru buat <@&${SPILL_ME_ROLE_ID}>!\nCek di <#${SPILL_ME_CHANNEL_ID}> yaa!`
           );
         }
       } catch (e) {
@@ -738,8 +743,6 @@ async function sendBoosterPost() {
     console.log('[Booster] BOOSTER_DRIVE_FOLDER_ID not set, skipping.');
     return;
   }
-  const listFiles = global._driveListFiles;
-  const downloadFile = global._driveDownloadFile;
   if (!listFiles || !downloadFile) {
     console.log('[Booster] Drive module not loaded yet, skipping this run.');
     return;
@@ -792,7 +795,7 @@ async function sendBoosterPost() {
       const announceCh = client.channels.cache.get(BOOSTER_ANNOUNCE_CHANNEL_ID);
       if (announceCh) {
         await announceCh.send(
-          `Ada konten baru nih buat @Server Booster!\nCek di <#${BOOSTER_CHANNEL_ID}> yaa!`
+          `Ada konten baru nih buat <@&${BOOSTER_ROLE_ID}>!\nCek di <#${BOOSTER_CHANNEL_ID}> yaa!`
         );
       }
     } catch (e) {
