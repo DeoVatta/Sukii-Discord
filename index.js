@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { listFiles, downloadFile } from './drive-source/drive-source.js';
-import { tickLiveLoop, tickPostsLoop } from './tevi-notif.js';
+import { tickLiveLoop, tickPostsLoop, setDiscordClient } from './tevi-notif.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -221,6 +221,7 @@ client.on('clientReady', () => {
   // Start spill me scheduler (daily at 18:00 WIB)
   scheduleSpillMePost();
   // Start Tevi notification polls (live + posts)
+  setDiscordClient(client);
   tickLiveLoop();
   tickPostsLoop();
   setInterval(tickLiveLoop, 60 * 1000);
