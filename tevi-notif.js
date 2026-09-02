@@ -23,7 +23,7 @@ const CFG = {
   liveCooldownMs: parseInt(process.env.LIVE_COOLDOWN_MS || String(60 * 60 * 1000), 10),
   logDir: join(__dirname, 'tevi-data'),
   // Discord channels (mirrors Telegram: live→general+notif, posts→notif)
-  liveChannelId: process.env.DISCORD_LIVE_CHANNEL_ID || '1544623829320732732',
+  liveChannelId: process.env.DISCORD_LIVE_CHANNEL_ID || '1361337546675851376',
   postsChannelId: process.env.DISCORD_NOTIF_CHANNEL_ID || '1361337546675851376',
 };
 
