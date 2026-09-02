@@ -23,7 +23,7 @@ const CFG = {
   liveCooldownMs: parseInt(process.env.LIVE_COOLDOWN_MS || String(60 * 60 * 1000), 10),
   logDir: join(__dirname, 'tevi-data'),
   // Discord channels (mirrors Telegram: live→general+notif, posts→notif)
-  liveChannelId: process.env.DISCORD_LIVE_CHANNEL_ID || '1361355108411248832',
+  liveChannelId: process.env.DISCORD_LIVE_CHANNEL_ID || '1544623829320732732',
   postsChannelId: process.env.DISCORD_NOTIF_CHANNEL_ID || '1361337546675851376',
 };
 
@@ -89,10 +89,7 @@ async function tickLive(state) {
   if (!state.wasLive && isLive && startupMs > CFG.startupGraceMs && !cooldownActive) {
     const ok = await discordSend(CFG.liveChannelId, { content: renderLiveNotif() });
     if (ok) state.lastLiveNotifiedAt = Date.now();
-    // also mirror to notif channel if different
-    if (CFG.postsChannelId && CFG.postsChannelId !== CFG.liveChannelId) {
-      await discordSend(CFG.postsChannelId, { content: renderLiveNotif() });
-    }
+    // mirror disabled — single channel 1544623829320732732 only
   }
   state.wasLive = isLive;
 }
